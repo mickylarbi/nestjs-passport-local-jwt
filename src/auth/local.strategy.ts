@@ -1,9 +1,9 @@
-import { BadRequestException, Body, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { Strategy } from "passport-local";
 import { AuthService } from "./auth.service";
 import { AuthDto } from "./dtos/auth.dto";
-import { isNotEmpty, isString, validate } from "class-validator";
+import { validate } from "class-validator";
 
 @Injectable()
 export class LocalStrategy extends PassportStrategy(Strategy) {

@@ -3,12 +3,14 @@ import { JwtService } from '@nestjs/jwt';
 import { UserService } from 'src/user/user.service';
 import * as bcrypt from 'bcrypt';
 import { AuthDto } from './dtos/auth.dto';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
     constructor(
         private readonly userService: UserService,
-        private readonly jwtService: JwtService
+        private readonly jwtService: JwtService,
+        private readonly configService: ConfigService
     ) { }
 
     async validateUser(username: string, pass: string) {
@@ -21,19 +23,25 @@ export class AuthService {
     }
 
     async login(user) {
-        const payload = { username: user.username, sub: user.userId }
+        const payload = { username: user.username, sub: user._id }
 
         const access_token = this.jwtService.sign(payload, {
-            secret: 'access-secret',
+            secret: this.configService.get<string>('ACCESS_TOKEN_SECRET'),
             expiresIn: '1h'
         })
 
         const refresh_token = this.jwtService.sign(payload, {
-            secret: 'refresh-secret',
+            secret: this.configService.get<string>('REFRESH_TOKEN_SECRET'),
             expiresIn: '7d'
         })
 
-        return { ...user, access_token, refresh_token }
+        await this.userService.updateRefreshToken(user._id, refresh_token)
+
+        return {
+            ...user,
+            password: undefined, __v: undefined, refreshToken: undefined,
+            access_token, refresh_token
+        }
     }
 
     async register(data: AuthDto) {
@@ -49,18 +57,21 @@ export class AuthService {
             if (!user) throw new ForbiddenException('User does not exist')
             if (user.refreshToken !== refreshToken) throw new ForbiddenException('Invalid refresh token')
 
-            const newAccessToken = this.jwtService.sign(
-                { sub: payload.sub, username: user.username },
-                { secret: 'access-secret', expiresIn: '1h' }
+            const access_token = this.jwtService.sign(
+                { sub: user._id, username: user.username },
+                {
+                    secret: this.configService.get<string>('ACCESS_TOKEN_SECRET'),
+                    expiresIn: '1h'
+                }
             )
 
-            return newAccessToken
+            return { access_token }
         } catch (error) {
             throw new UnauthorizedException('Invalid refresh token')
         }
     }
 
-    async logout(userId: number) {
+    async logout(userId: string) {
         await this.userService.removeRefreshToken(userId)
     }
 }

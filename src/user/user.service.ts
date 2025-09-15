@@ -1,23 +1,20 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
+import { User } from './user.schema';
+import { Model } from 'mongoose';
 
-
-export type User = {
-    userId: number
-    username: string
-    password: string
-    refreshToken?: string
-}
 
 @Injectable()
 export class UserService {
-    private users: User[] = [];
+    constructor(@InjectModel(User.name) private userModel: Model<User>) { }
+
 
     async findOne(username: string) {
-        return this.users.find(u => u.username === username)
+        return (await this.userModel.findOne({ username }).exec())?.toObject()
     }
-    async findById(userId: number) {
-        return this.users.find(u => u.userId === userId)
+    async findById(id: string) {
+        return (await this.userModel.findById(id).exec())?.toObject()
     }
 
     async create(username: string, password: string) {
@@ -25,43 +22,28 @@ export class UserService {
         if (user) throw new ConflictException('A user already exists with the given username')
 
         const hashedPassword = await bcrypt.hash(password, 10)
-        const userId = this.getNewUserId()
 
-        const newUser = {
-            userId, username,
+        const newUser = new this.userModel({
+            username,
             password: hashedPassword
-        }
-        this.users.push(newUser)
+        })
 
-        return { ...newUser, password: undefined }
+        return { ...(await newUser.save()).toObject(), password: undefined, __v: undefined, refreshToken: undefined }
     }
 
-    async updateRefreshToken(userId: number, refreshToken: string) {
-        if (this.users.some(u => userId === u.userId)) {
-            this.users = this.users
-                .map(u => userId === u.userId ? { ...u, refreshToken } : u)
+    async updateRefreshToken(userId: string, refreshToken: string) {
+        if (await this.userModel.exists({ _id: userId }).exec()) {
+            await this.userModel.findByIdAndUpdate(userId, { refreshToken }).exec()
             return
         }
         throw new ForbiddenException('User does not exist')
     }
 
-    async removeRefreshToken(userId: number) {
-        if (this.users.some(u => userId === u.userId)) {
-            this.users = this.users
-                .map(u => userId === u.userId ? { ...u, refreshToken: undefined } : u)
+    async removeRefreshToken(userId: string) {
+        if (await this.userModel.exists({ _id: userId }).exec()) {
+            await this.userModel.findByIdAndUpdate(userId, { refreshToken: null }).exec()
             return
         }
         throw new ForbiddenException('User does not exist')
-    }
-
-
-    // PRIVATE
-
-
-    private getNewUserId() {
-        let userId = this.users.length
-        while (this.users.some(u => u.userId === userId)) ++userId
-
-        return userId
     }
 }
